@@ -1,0 +1,30 @@
+#include "mbed.h"
+//commit check
+// Blinking rate in milliseconds
+#define BLINKING_RATE1    1000ms //LED blink rate
+#define BLINKING_RATE2    500ms //LED 2 blinks every 0.5 sec
+#define BLINKING_RATE3    100ms //LED 3 blinks every 2 sec
+
+int main(){
+    //initialise the digital pin LED1 as an output
+    DigitalOut led1(LED1);
+    DigitalOut led2(LED2);
+    DigitalOut led3(LED3);
+    int counter=1; 
+    while (true) {
+        if (counter%1==0){
+                    led2=!led2;
+                    ThisThread::sleep_for(BLINKING_RATE3); //Blink rate 3 is a quick flash
+        }
+        if (counter%2==0){
+                    led1=!led1;
+                    ThisThread::sleep_for(BLINKING_RATE3);
+            }
+        if (counter%4==0){
+                    led3=!led3;
+                    ThisThread::sleep_for(BLINKING_RATE3);
+        }
+        ThisThread::sleep_for(BLINKING_RATE2); //blinking rate 2 is a 500ms waiting period
+        counter++; //using the counter we can count from 500 to 1000 and then to 2000ms in 500ms interval producing the full time ranges
+    }
+}
