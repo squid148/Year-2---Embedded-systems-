@@ -1,1 +1,44 @@
+//Week2 Task 2 main file
+#include "mbed.h"
+#include "arm_book_lib.h"
+#include "W2_functions.h"
 
+
+
+int main()
+{   //declare button check
+    for (int b=0;b<6;b++){
+buttons[b].mode(PullDown);
+}
+    int input_val;
+    int warn_count=0;
+    cor_LED = 0;
+
+
+    //int admin_pas[4]={5555} //admin passcode set
+
+    while (true) { 
+        if (digit<4){ //run input func if less than 4 digits have been entered
+            if (input_read(input_val)) { //If input_val is true run if
+                user_input[digit]=input_val;//insert user input into array for later
+                digit++;
+                };
+            
+        }
+        else {
+            if (check()){ //check func compares user_input array to passcode array and returns true if correct or false if mismatch found
+                flash_cor();//if check is true then green LED is flashed
+            }
+            else{
+                flash_incor();
+                warn_count++;
+                if (warning(warn_count)){
+                    warn_flash();
+                    warn_count=0;
+                }
+                }//flahses red light if entered code is incorrect
+            digit=0; //resets digits for next attempt after 4 digits are inputted
+        }
+        
+    }
+}
