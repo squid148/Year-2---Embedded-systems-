@@ -1,0 +1,113 @@
+W3 T1 main
+//===[Libraries/Headers]=============================================================
+#include "mbed.h"
+#include "arm_book_lib.h"
+
+
+//=====[Declaration and initialization of public global objects]===============
+DigitalIn enterButton(BUTTON1);
+DigitalIn sw1_gas_tog(D2); //Toggle gas state (on/off)
+DigitalIn sw2_gas_state(D3); //request current gas alarm to be sent to pc
+DigitalIn sw3_Otemp_state(D4); //toggle over temperature alarm state (on/off)
+DigitalIn sw4_Otemp_tog(D5); //toggle over-temp alarm state
+DigitalIn alarm_ar(D6); //acknowledge/Rest both alarms (gas and temperature)
+DigitalIn mon_tog(D7); //enter/exit continuous monitoringmode (periodic data streamed to PC)
+
+DigitalOut GasLED(LED1);
+DigitalOut OtempLED(LED2);
+
+UnbufferedSerial uartUsb(USBTX, USBRX, 115200);
+
+//=====[Declaration and initialization of public global variables]=============
+bool Gasstate = OFF;
+bool Otempstate = OFF;
+int input=0;
+
+
+//=====[Declarations (prototypes) of public functions]=========================
+
+void inputsInit();
+void outputsInit();
+void debounce();
+void uartwriteG(bool Gas_stateG);
+void inputcheck(int& input);
+void LEDset();
+
+// main() runs in its own thread in the OS
+int main() {
+    inputsInit();
+    outputsInit();
+
+
+    while(true) {
+        LEDset();
+        inputcheck(input);
+        switch (input) {
+        case 1:
+        Gasstate=!Gasstate;//toggle alarm state
+        input=0;
+        break;
+        case 2:
+        uartwriteG(Gasstate);
+        input=0;
+        break;
+        }
+    }
+
+}
+
+
+//example code https://github.com/armBookCodeExamples/example_2-1.git
+
+//=====[public functions]=========================
+
+
+void inputsInit()
+{
+    sw1_gas_tog.mode(PullDown);
+    sw2_gas_state.mode(PullDown);
+    sw3_Otemp_state.mode(PullDown);
+    sw4_Otemp_tog.mode(PullDown);
+    alarm_ar.mode(PullDown);
+    mon_tog.mode(PullDown);
+}
+
+void outputsInit()
+{
+    GasLED = OFF;
+    OtempLED = OFF;
+}
+
+void uartwriteG(bool Gas_stateG)
+{
+            if ( Gasstate ) {//checks gas alarm state
+                uartUsb.write( "The gas alarm is activated\r\n", 28); //write in statementserial monitor if true /r/n count as a single character
+                //in uartUsm.write("statement you want printed\r\n (start at beggining of new line)", nymber of characters that must be sent for the text)
+            } else {
+                uartUsb.write( "The gas alarm is not activated\r\n", 32);
+            }
+        }
+           
+        //useufl to have a specific function so yo can add to it as needed
+
+
+void debounce() {
+    ThisThread::sleep_for(200ms);
+}
+
+void inputcheck(int& input) {
+        if(sw1_gas_tog) {
+            input=1;
+            debounce();
+        }
+        else if(sw2_gas_state) {
+            input=2;
+            debounce();
+        }
+        else {input=0;}
+    }
+
+void LEDset() {
+    GasLED=Gasstate;
+    OtempLED=Otempstate;
+}
