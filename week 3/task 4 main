@@ -1,0 +1,171 @@
+W3_T4
+//===[Libraries/Headers]=============================================================
+#include "mbed.h"
+#include "arm_book_lib.h"
+
+
+//=====[Declaration and initialization of public global objects]===============
+DigitalIn enterButton(BUTTON1);
+DigitalIn sw1_gas_tog(D2); //Toggle gas state (on/off)
+DigitalIn sw2_gas_state(D3); //request current gas alarm to be sent to pc
+DigitalIn sw3_Otemp_state(D4); //toggle over temperature alarm state (on/off)
+DigitalIn sw4_Otemp_tog(D5); //toggle over-temp alarm state
+DigitalIn sw5_alarm_ar(D6); //acknowledge/Rest both alarms (gas and temperature)
+DigitalIn sw6_mon_tog(D7); //enter/exit continuous monitoringmode (periodic data streamed to PC)
+
+DigitalOut GasLED(LED1);
+DigitalOut OtempLED(LED2);
+DigitalOut MonLED(LED3);
+UnbufferedSerial uartUsb(USBTX, USBRX, 115200);
+
+//=====[Declaration and initialization of public global variables]=============
+bool Gasstate = OFF; //declaring states of alarms and modes variables
+bool Otempstate = OFF;
+bool m_state=OFF;
+int input=0; //input declare
+Timer mon_time; //timer dec
+
+//=====[Declarations (prototypes) of public functions]=========================
+
+void inputsInit();
+void outputsInit();
+void debounce();
+void uartwriteG(bool Gas_stateG);
+void uartwriteT(bool Otemp_stateO);
+void inputcheck(int& input);
+void LEDset();
+void monitorprint(bool ga_statef, bool ta_statef);
+void warning_check(bool ga_statef, bool ta_statef, int inputf);
+
+//tried using ticker but ticker can't handle parameters unless very odd code is used
+// main() runs in its own thread in the OS
+int main() {
+    inputsInit();
+    outputsInit();
+    mon_time.start();
+
+    while(true) {
+        LEDset();
+        if (m_state && (mon_time.elapsed_time()>=2s)){ //if m_state has been set to high and the time elapsed is 2 seconds
+            monitorprint(Gasstate,Otempstate); 
+            mon_time.reset(); 
+            }
+        inputcheck(input);
+        switch (input) {
+            case 1:
+            Gasstate=!Gasstate;//toggle alarm state
+            break;
+        case 2:
+            uartwriteG(Gasstate); //print gas alarm state
+            break;
+        case 3:
+            uartwriteT(Otempstate);//temp alarm state
+            break;
+        case 4:
+            Otempstate=!Otempstate;// temp alarm state toggle
+            break;
+
+
+        case 6://monitor mode
+            m_state=!m_state; //monitor mode toggle
+            break;
+        }
+        warning_check(Gasstate, Otempstate, input);//call warning check after case since need to verify that state has turned high from low
+        input=0;
+    }
+
+}
+
+
+//example code https://github.com/armBookCodeExamples/example_2-1.git
+
+
+
+
+void inputsInit()
+{
+    sw1_gas_tog.mode(PullDown);
+    sw2_gas_state.mode(PullDown);
+    sw3_Otemp_state.mode(PullDown);
+    sw4_Otemp_tog.mode(PullDown);
+    sw5_alarm_ar.mode(PullDown);
+    sw6_mon_tog.mode(PullDown);
+}
+
+void outputsInit()
+{
+    GasLED = OFF;
+    OtempLED = OFF;
+}
+
+void uartwriteG(bool Gas_stateG)
+{
+            if ( Gasstate ) {//checks gas alarm state
+                uartUsb.write( "GAS ALARM ACTIVE\n\r", 17); //write in statementserial monitor if true /r/n count as a single character
+                //in uartUsm.write("statement you want printed\r\n (start at beggining of new line)", nymber of characters that must be sent for the text)
+            } else {
+                uartUsb.write( "GAS ALARM CLEAR\n\r", 16);
+            }
+        }
+           
+        //useufl to have a specific function so yo can add to it as needed
+
+void uartwriteT(bool Otemp_stateO)
+{
+            if ( Otemp_stateO ) {//checks gas alarm state
+                uartUsb.write( "TEMP ALARM ACTIVE\n\r", 20); //write in statement to serial monitor if true, /r/n count as a single character
+                //in uartUsm.write("statement you want printed\r\n (<-start at beggining of new line)", nymber of characters that must be sent for the text)
+            } else {
+                uartUsb.write( "TEMP ALARM CLEAR\n\r", 19);
+            }
+        }
+
+void debounce() {
+    ThisThread::sleep_for(200ms); //prevents buttons from being pushd multiple times
+}
+
+void inputcheck(int& input) {
+        if(sw1_gas_tog) {
+            input=1;
+            debounce();
+        }
+        else if(sw2_gas_state) {
+            input=2;
+            debounce();
+        }
+        else if(sw3_Otemp_state){
+            input=3;
+            debounce();
+        }
+        else if(sw4_Otemp_tog){
+            input=4;
+            debounce();
+        }
+
+        else if(sw6_mon_tog){
+            input=6;
+            debounce();
+        }
+        else {input=0;}
+    }
+
+void LEDset() { //sets LED states to alaram state
+    GasLED=Gasstate; //gas alarm
+    OtempLED=Otempstate; //temp alarm
+    MonLED=m_state;//monitor state LED displayer
+}
+
+void monitorprint(bool ga_statef, bool ta_statef) {//monitor mode function, parameter: m_statef= monitor state, ga_statef= gas alram state, ta_state, temp alarm state
+    //if monitor mode is on print alarm states
+    uartwriteG(ga_statef);//call function to print out state of gas alarm
+    uartwriteT(ta_statef);//call function to print out state of temp alarm
+}
+
+void warning_check(bool ga_statef, bool ta_statef, int inputf) {
+    if (inputf==1 && ga_statef) {//if gas alarm has gone from off to on
+        uartUsb.write( "WARNING: GAS DETECTED\n\r", 23);
+    }
+    if (inputf==4 && ta_statef){ //if temp alarm has gone from off to on
+         uartUsb.write( "WARNING: TEMPERATURE TOO HIGH\n\r", 31);
+    }
+}
