@@ -1,0 +1,190 @@
+W4 T4
+//=====[Libraries]=============================================================
+#include "mbed.h"
+#include "arm_book_lib.h"
+
+//=====[Defines]===============================================================
+
+#define NUMBER_OF_AVG_SAMPLES                   100 //need to take average to output accurate results
+#define OVER_TEMP_LEVEL                         30 //upper limit for temp that causes alarm/high otemp state
+#define TIME_INCREMENT_MS                       10 //frequency of data collection
+
+
+//=====[Declaration and initialization of public global variables]=============
+
+DigitalIn mq2(PE_12); //PE_12 is a clock pin, why is it attatched? mabye because it can only outupt high or low?
+                      //test to see if needs to be on a digital or analogue in
+DigitalOut alarmLed(LED1);
+DigitalOut incorrectCodeLed(LED3);
+DigitalOut systemBlockedLed(LED2);
+
+DigitalInOut sirenPin(PE_10);
+
+UnbufferedSerial uartUsb(USBTX, USBRX, 115200);
+
+AnalogIn potentiometer(A0);
+AnalogIn lm35(A1); //don't need to initialize seperately does it automatically
+//if gas sensor ouput should be conected to anolog insert code here, check first
+
+
+//=====[Declaration and initialization of public global variables]=============
+bool alarmState=OFF;
+bool gasDetectorState= OFF;
+bool overTempDetectorState= OFF;
+
+float potentiometerVal = 0.0; //reads current potentiometer value
+float lm35ReadingVal  = 0.0; //average that is updated
+float lm35TempC  = 0.0; //float var to store the converted average temp in c
+float lm35ReadingsAverage  = 0.0;
+float lm35ReadingsSum      = 0.0;
+float lm35ReadingsArray[NUMBER_OF_AVG_SAMPLES];
+float GasAlarmVal=0.0; //value to store gas alarm value (should be a bool?)
+
+Timer Reading_Timer; //using timer and elapsed time since it easier
+
+/*Ticker flipper; //ticker section and update readings 
+int alarm_mode=0;
+bool tickerattach=false;*/
+// function prototyping
+void TempRead(); //need a function to convert temp digitalin into temp reading
+void TempInC();
+void GasRead(); //need a function to convert gas reading  into output, why is gas sensor attatched timer.
+void Potentiometer_Read(); // need a function to read potentiometer
+void SensorValPrint(); //function to print out sensor outputs
+void inputsInit();
+
+// main() runs in its own thread in the OS
+int main()
+{
+    inputsInit();
+
+    Reading_Timer.start();
+
+    while (true) {
+
+        if (Reading_Timer.elapsed_time() >= 50ms) {
+            alarmLed=ON; //simple check to see if system is actually runnign if serial  monitor doesn't work
+             TempRead(); //potentiometer affects the temp reading for some reason
+            TempInC(); //tried everything to fix it but it's genuinly a hardware issue with the board due to single hold capacitor
+            Potentiometer_Read();
+           //look in ex 3.5 since this issue doesn't occur
+           
+            GasRead();
+            SensorValPrint();
+
+            Reading_Timer.reset();
+        }
+    }
+}
+
+
+void inputsInit() {
+sirenPin.mode(OpenDrain);
+sirenPin.input();
+}
+
+
+void TempRead() {
+static int lm35SampleIndex=0; //index is carried between calls
+int i=0;
+
+lm35ReadingsArray[lm35SampleIndex]=lm35.read();
+lm35SampleIndex++;
+if (lm35SampleIndex >= NUMBER_OF_AVG_SAMPLES) {
+    lm35SampleIndex = 0; //reset sample index so you array can be filled in next time
+}   
+
+lm35ReadingsSum=0.0;
+
+for (i=0; i<NUMBER_OF_AVG_SAMPLES;i++){
+    lm35ReadingsSum = lm35ReadingsSum + lm35ReadingsArray[i];
+    }
+lm35ReadingsAverage=lm35ReadingsSum / NUMBER_OF_AVG_SAMPLES;
+}
+
+void TempInC() {
+lm35TempC=(lm35ReadingsAverage * 3.3/0.01);
+}
+
+void GasRead() {
+GasAlarmVal =mq2.read();
+}
+
+void Potentiometer_Read(){
+potentiometer.read();               
+    ThisThread::sleep_for(10ms);                   
+    potentiometerVal = potentiometer.read();
+}
+
+
+void SensorValPrint() { //print out sesnor values, can't use uartusb directly because it can't print vairble values so use sprint to write into a string and the print that string with uart writ 
+char str[100]; //str array to store needed string for printing
+int StringLength;// int to store string length for printing
+    //print temp values
+    sprintf(str, "Temperature reading: %.2f, in \xB0 C: %.2f \xB0 C\r\n",lm35ReadingsAverage,lm35TempC); //writing into string, needs to be sprintf for float
+    StringLength=strlen(str);
+    uartUsb.write(str,StringLength);
+
+    //print gas value
+    sprintf(str, "Gas reading: %.2f\r\n",GasAlarmVal);
+    StringLength=strlen(str);
+    uartUsb.write(str,StringLength);
+
+    //print potentiometer value
+    sprintf(str, "potentiometer  reading: %.2f\r\n", potentiometerVal);
+    StringLength=strlen(str);
+    uartUsb.write(str,StringLength);
+}
+/*
+void alarmActivationUpdate()
+{
+    if( gasDetector) {
+        gasDetectorState = ON;
+        alarmState = ON;
+    }
+    if( overTempDetector ) {
+        overTempDetectorState = ON;
+        alarmState = ON;
+    }
+    if( alarmState ) {//if either sensor has set the alarm high trigger mode change and attatch ticker to same LED flicker function but different timers depending on new alarm mode
+        int newmode=0;
+
+        if (gasDetectorState && overTempDetectorState) { //has to check both states first otherwise will just trigger the first ON alarm it checks for. 100ms flash
+            newmode=3;
+        }
+        else if (gasDetectorState) {//gas detector high only triggers 1s flash mode
+            newmode=1;
+        }
+        else if (overTempDetectorState) {//otemp high triggers 500ms flash mode
+            newmode=2;
+        }
+
+
+
+        if (newmode!=alarm_mode){//only change ticker assignment if mode change has been detected
+            flipper.detach();//can't reassign ticker while it is still attatched to something so if a new mode has been enabled by the alarm logic then we have to detach and attatch to a new ticker timer
+        
+        
+            switch (newmode) {
+                case  1:
+                flipper.attach( &alarm_flash, 1s); //remember no parameters on ticker attatch 
+                break; //have to break to prevent runoff into other cases code
+                case 2:
+                flipper.attach( &alarm_flash, 500ms);
+                break;
+                case 3:
+                flipper.attach( &alarm_flash, 100ms);
+                break;
+            }
+        alarm_mode=newmode; // alarm mode has to be set to new mode so we can compare then for the detach and switch case
+        }
+    }
+    else{
+        alarmLed = OFF;//have to set them LEDs and states low if none of the inputs are high to reset the system before running it again
+        gasDetectorState = OFF;
+        overTempDetectorState = OFF;
+    }
+}
+*/
+
+
