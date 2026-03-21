@@ -1,4 +1,4 @@
-W5_T5 main
+W5_T5 updated and fixed
 //=====[Libraries]=============================================================
 #include "mbed.h"
 #include "arm_book_lib.h"
@@ -6,7 +6,7 @@ W5_T5 main
 //=====[Defines]===============================================================
 
 #define NUMBER_OF_AVG_SAMPLES                   100 //need to take average to output accurate results
-#define OVER_TEMP_LEVEL                         22 //upper limit for temp that causes alarm/high otemp state
+#define OVER_TEMP_LEVEL                         26 //upper limit for temp that causes alarm/high otemp state
 #define TIME_INCREMENT_MS                       10 //frequency of data collection
 
 
@@ -18,12 +18,12 @@ DigitalOut alarmLed(LED1);
 DigitalOut incorrectCodeLed(LED3);
 DigitalOut systemBlockedLed(LED2);
 
-DigitalInOut sirenPin(PE_10);
+DigitalOut sirenPin(PE_10);
 
 UnbufferedSerial uartUsb(USBTX, USBRX, 115200);
 
 AnalogIn potentiometer(A0);
-AnalogIn lm35(A1); //don't need to initialize seperately does it automatically
+AnalogIn lm35(A5); //don't need to initialize seperately does it automatically, bleeding into each other 
 //if gas sensor ouput should be conected to anolog insert code here, check first
 
 
@@ -57,16 +57,16 @@ void TempInC();
 void GasRead(); //need a function to convert gas reading  into output, why is gas sensor attatched timer.
 void Potentiometer_Read(); // need a function to read potentiometer
 void SensorValPrint(); //function to print out sensor outputs
-void inputsInit();
+void outputsInit();
 void ThresholdSet();
 void AlarmCheck();
-void alarmstateprint();
+//void alarmstateprint();
 void buzzer();
 
 
 int main()
 {
-    inputsInit();
+    outputsInit();
     Reading_Timer.start();
     while (true) {
         
@@ -83,6 +83,7 @@ int main()
 
             if (alarmState){
                 buzzer();//
+                SensorValPrint();
             }
             else {
             sirenPin=OFF;
@@ -96,9 +97,12 @@ int main()
 
 
 
-void inputsInit() {
-     sirenPin.output();  
+void outputsInit() {
+  //should be declared an output
     sirenPin=OFF;
+     for(int i=0; i<NUMBER_OF_AVG_SAMPLES; i++){ //added this in to make sure that array starts around room temperature
+        lm35ReadingsArray[i] = 0;
+    }
 }
 
 
@@ -122,16 +126,14 @@ lm35ReadingsAverage=lm35ReadingsSum / NUMBER_OF_AVG_SAMPLES;
 }
 
 void TempInC() {
-lm35TempC=(lm35ReadingsAverage/0.01);
+lm35TempC=(lm35ReadingsAverage*(3.3/0.01));
 }
 
 void GasRead() {
 GasAlarm = !mq2.read();
 }
 
-void Potentiometer_Read(){
-potentiometer.read();               
-    ThisThread::sleep_for(10ms);                   
+void Potentiometer_Read(){                       
     potentiometerVal = potentiometer.read();
     Threshold=potentiometerVal*100;
 }
@@ -178,32 +180,23 @@ void AlarmCheck(){
         overTempDetectorState=ON;
         alarmState=ON;
     }
+    else {overTempDetectorState=OFF;}
     if (GasAlarm){
         gasDetectorState=ON;
         alarmState=ON;
+        
     }
-}
-
-void alarmstateprint() {
-    char str[100]; //re-use code from sensorvalueprint
-    int StringLength;
-    if (gasDetectorState){
-        sprintf(str,"Gas warning\r\n", Threshold);
-        StringLength=strlen(str);
-        uartUsb.write(str,StringLength);
-    }
-    if (overTempDetectorState){
-        sprintf(str,"Temperature warning\r\n\n", Threshold);
-        StringLength=strlen(str);
-        uartUsb.write(str,StringLength);
+    else {gasDetectorState=OFF;}
+    if (!gasDetectorState && !overTempDetectorState){
+        alarmState=OFF;
     }
 }
 
 void buzzer(){ //made buzzer intermittent
     char str[100]; //re-use code from sensorvalueprint
     int StringLength;
-    if (alarmState=ON){
-        sirenPin=!sirenPin;
+    if (alarmState==ON){
+        sirenPin=ON;
         sprintf(str,"Buzzer ON - Cause:\r\n");
         StringLength=strlen(str);
         uartUsb.write(str,StringLength);
