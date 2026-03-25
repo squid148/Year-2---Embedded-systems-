@@ -1,0 +1,191 @@
+//=====[Libraries]=============================================================  //keep working on header files 
+#include "mbed.h"
+#include "arm_book_lib.h"
+#include "Week_4.h"
+
+//=====[Defines]===============================================================
+
+#define NUMBER_OF_AVG_SAMPLES                   100 //need to take average to output accurate results
+#define OVER_TEMP_LEVEL                         26 //upper limit for temp that causes alarm/high otemp state
+#define TIME_INCREMENT_MS                       10 //frequency of data collection
+
+
+//=====[Declaration and initialization of public global objects]===============
+
+DigitalIn mq2(PE_12); //PE_12 is a clock pin, why is it attatched? mabye because it can only outupt high or low?
+                      //test to see if needs to be on a digital or analogue in
+DigitalOut alarmLed(LED1);
+DigitalOut incorrectCodeLed(LED3);
+DigitalOut systemBlockedLed(LED2);
+
+DigitalOut sirenPin(PE_10); //doesn't want to work for some reason in cpp file, try moving to header?
+
+UnbufferedSerial uartUsb(USBTX, USBRX, 115200);
+
+AnalogIn potentiometer(A0);
+AnalogIn lm35(A5); //don't need to initialize seperately does it automatically, bleeding into each other 
+//if gas sensor ouput should be conected to anolog insert code here, check first
+
+
+//=====[Declaration and initialization of public global variables]=============
+//alarm states 
+bool alarmState=OFF; //initialize here, ext declared in header
+bool gasDetectorState= OFF;
+bool overTempDetectorState= OFF;
+
+
+
+//sensor ouptut and processing variables
+float potentiometerVal = 0.0; //reads current potentiometer value
+float lm35ReadingVal  = 0.0; //average that is updated
+float lm35TempC  = 0.0; //float var to store the converted average temp in c
+float lm35ReadingsAverage  = 0.0;
+float lm35ReadingsSum      = 0.0;
+float lm35ReadingsArray[NUMBER_OF_AVG_SAMPLES];
+bool GasAlarm=OFF; //value to store gas alarm value, changed to a bool 
+
+//Alarm limit variables
+float Threshold; 
+float OTempThreshold;
+
+Timer Reading_Timer; //using timer and elapsed time since it easier than ticker integration
+
+//=====[Declaration and initialization of public global objects]===============
+
+
+// ===[function]====================================================
+
+
+void OutputsInit() {
+  //should be declared an output
+    sirenPin=OFF; //ensure alarm is off when starting programme
+    alarmLed = OFF;
+    incorrectCodeLed = OFF;
+    systemBlockedLed = OFF;
+}
+
+void sensors(){
+     TempRead(); //potentiometer affects the temp reading for some reason
+            TempInC(); //tried everything to fix it but it's genuinly a hardware issue with the board due to single hold capacitor
+            Potentiometer_Read();
+            GasRead(); // read and processes sensor data
+
+            ThresholdSet(); //sets the threshold for the temp alarm
+}
+
+void TempRead() {
+static int lm35SampleIndex=0; //index is carried between calls
+int i=0;
+
+lm35ReadingsArray[lm35SampleIndex]=lm35.read();
+lm35SampleIndex++;
+if (lm35SampleIndex >= NUMBER_OF_AVG_SAMPLES) {
+    lm35SampleIndex = 0; //reset sample index so you array can be filled in next time
+}   
+
+lm35ReadingsSum=0.0;
+
+for (i=0; i<NUMBER_OF_AVG_SAMPLES;i++){
+    lm35ReadingsSum = lm35ReadingsSum + lm35ReadingsArray[i];
+    }
+lm35ReadingsAverage=lm35ReadingsSum / NUMBER_OF_AVG_SAMPLES;
+}
+
+void TempInC() {
+lm35TempC=(lm35ReadingsAverage*(3.3/0.01));
+}
+
+void GasRead() {
+GasAlarm = !mq2.read();
+}
+
+void Potentiometer_Read(){                       
+    potentiometerVal = potentiometer.read();
+    Threshold=potentiometerVal*100;
+}
+
+
+void SensorValPrint() { //print out sesnor values, can't use uartusb directly because it can't print vairble values so use sprint to write into a string and the print that string with uart writ 
+char str[100]; //str array to store needed string for printing
+int StringLength;// int to store string length for printing
+    //print temp values
+    sprintf(str, "Temperature reading: %.2f, in \xB0 C: %.2f \xB0 C\r\n",lm35ReadingsAverage,lm35TempC); //writing into string, needs to be sprintf for float
+    StringLength=strlen(str);
+    uartUsb.write(str,StringLength);
+
+    //print gas value
+    if(GasAlarm){
+        sprintf(str, "Gas present: true\r\n");
+    }
+    else {
+        sprintf(str,"Gas present: false\r\n"); 
+    }
+    StringLength=strlen(str);
+    uartUsb.write(str,StringLength);
+/*
+    //print potentiometer value
+    sprintf(str, "potentiometer  reading: %.2f\r\n", potentiometerVal);
+    StringLength=strlen(str);
+    uartUsb.write(str,StringLength);
+*/
+    sprintf(str,"sensitivity value: %.2f\r\n", Threshold);
+    StringLength=strlen(str);
+    uartUsb.write(str,StringLength);
+
+    sprintf(str,"Temp threshold: \xB0 %.2f\r\n\n", OTempThreshold);
+    StringLength=strlen(str);
+    uartUsb.write(str,StringLength);
+}
+
+void ThresholdSet(){
+OTempThreshold=(OVER_TEMP_LEVEL+Threshold);
+}
+
+void AlarmCheck(){
+    if (lm35TempC>OTempThreshold){
+        overTempDetectorState=ON;
+        alarmState=ON;
+    }
+    else {overTempDetectorState=OFF;}
+    if (GasAlarm){
+        gasDetectorState=ON;
+        alarmState=ON;
+        
+    }
+    else {gasDetectorState=OFF;}
+    if (!gasDetectorState && !overTempDetectorState){
+        alarmState=OFF;
+    }
+}
+
+void buzzer(){ //made buzzer intermittent
+    char str[100]; //re-use code from sensorvalueprint
+    int StringLength;
+    if (alarmState==ON){
+        sirenPin=ON;
+        sprintf(str,"\nBuzzer ON - Cause:");
+        StringLength=strlen(str);
+        uartUsb.write(str,StringLength);
+        if (overTempDetectorState){
+            sprintf(str,"Temperature\r\n");
+        StringLength=strlen(str);
+        uartUsb.write(str,StringLength);
+        }
+        if (gasDetectorState){
+            sprintf(str,"Gas\r\n");
+        StringLength=strlen(str);
+        uartUsb.write(str,StringLength);
+        }
+        sprintf(str,"\nEnter 4-Digit Code to Deactivate\r\n");
+        StringLength=strlen(str);
+        uartUsb.write(str,StringLength);
+
+    
+    }
+}
+
+void LM35ReadingsArrayInit(){
+    for(int i=0; i<NUMBER_OF_AVG_SAMPLES; i++){ //added this in to make sure that array starts around room temperature
+        lm35ReadingsArray[i] = 0; //set all values to 0
+    }
+}
